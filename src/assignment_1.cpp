@@ -7,6 +7,7 @@
 #include "mygl/camera.h"
 #include "water.h"
 
+
 /* translation and color for the water plane */
 namespace waterPlane
 {
