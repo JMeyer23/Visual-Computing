@@ -156,6 +156,16 @@ void sceneInit(float width, float height)
 /* function to move and update objects in scene (e.g., rotate boat according to user input) */
 void sceneUpdate(float dt)
 {
+    /* udpate water model matrix using 3 wave functions defined in water.h */
+    for (unsigned i = 0; i < sScene.water.vertices.size(); i++) {
+        sScene.water.vertices[i].pos[1] = 0.0f;
+        for (unsigned j = 0; j < 3; j++) {
+            sScene.water.vertices[i].pos[1] += sScene.waterSim.parameter[j].amplitude * sin(sScene.waterSim.parameter[j].omega * dot(sScene.waterSim.parameter[j].direction, Vector2D{sScene.water.vertices[i].pos[0], sScene.water.vertices[i].pos[2]}) + sScene.waterSim.accumTime * sScene.waterSim.parameter[j].phi);
+            }
+        printf("%f %f %f\n", sScene.water.vertices[i].pos.x, sScene.water.vertices[i].pos.y, sScene.water.vertices[i].pos.z);
+        sScene.waterModelMatrix = Matrix4D::translation({0.0f, sScene.water.vertices[i].pos[1], 0.0f});
+    }
+
     /* if 'w' or 's' pressed, boat should rotate around x axis */
     int rotationDirX = 0;
     if (sInput.buttonPressed[0]) {
@@ -243,6 +253,7 @@ int main(int argc, char** argv)
 
         /* update model matrix of boat */
         timeStampNew = glfwGetTime();
+        sScene.waterSim.accumTime += timeStampNew - timeStamp;
         sceneUpdate(timeStampNew - timeStamp);
         timeStamp = timeStampNew;
 
