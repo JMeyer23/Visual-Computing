@@ -21,7 +21,7 @@ namespace scaledBoat {
     const Matrix4D trans = Matrix4D::translation({0.0f, 4.0f, 0.0f});
 }
 
-enum struct CameraMode{
+enum struct CameraMode {
     FixedView,
     ThirdPersonView
 };
@@ -32,6 +32,7 @@ struct {
     Camera camera;
     float zoomSpeedMultiplier;
     CameraMode cameraMode;
+    Vector3D cameraPositionOffsetToBoat;
 
 
     /* water */
@@ -48,8 +49,7 @@ struct {
     float boatMovementPerSecond;
 
     /* boat dynamic properties*/
-    float boatXPos;
-    float boatZPos;
+    Vector3D boatPosition;
     float boatXZAngle;
 
     /* shader */
@@ -93,12 +93,10 @@ void keyCallback(GLFWwindow *window, int key, int scancode, int action, int mods
     }
 
     //Switch Camera View
-    if(key == GLFW_KEY_1)
-    {
+    if (key == GLFW_KEY_1) {
         sInput.buttonPressed[4] = (action == GLFW_PRESS || action == GLFW_REPEAT);
     }
-    if(key == GLFW_KEY_2)
-    {
+    if (key == GLFW_KEY_2) {
         sInput.buttonPressed[5] = (action == GLFW_PRESS || action == GLFW_REPEAT);
     }
 
@@ -115,11 +113,9 @@ void mousePosCallback(GLFWwindow *window, double x, double y) {
 }
 
 /* GLFW callback function for mouse button events */
-void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods)
-{
+void mouseButtonCallback(GLFWwindow *window, int button, int action, int mods) {
     // Only allow moving of cameraView with mouse when not in thirdPersonView
-    if(sScene.cameraMode == CameraMode::FixedView)
-    {
+    if (sScene.cameraMode == CameraMode::FixedView) {
         if (button == GLFW_MOUSE_BUTTON_LEFT) {
             sInput.mouseLeftButtonPressed = (action == GLFW_PRESS || action == GLFW_REPEAT);
 
@@ -131,11 +127,9 @@ void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods)
 }
 
 /* GLFW callback function for mouse scroll events */
-void mouseScrollCallback(GLFWwindow* window, double xoffset, double yoffset)
-{
+void mouseScrollCallback(GLFWwindow *window, double xoffset, double yoffset) {
     // Only allow zooming of cameraView with mouse when not in thirdPersonView
-    if(sScene.cameraMode == CameraMode::FixedView)
-    {
+    if (sScene.cameraMode == CameraMode::FixedView) {
         cameraUpdateOrbit(sScene.camera, {0, 0}, sScene.zoomSpeedMultiplier * yoffset);
     }
 }
@@ -149,11 +143,6 @@ void windowResizeCallback(GLFWwindow *window, int width, int height) {
 
 /* function to set up and initialize the whole scene */
 void sceneInit(float width, float height) {
-    /* initialize camera */
-    sScene.camera = cameraCreate(width, height, to_radians(45.0f), 0.01f, 500.0f, {10.0f, 14.0f, 10.0f},
-                                 {0.0f, 4.0f, 0.0f});
-    sScene.zoomSpeedMultiplier = 0.05f;
-    sScene.cameraMode = CameraMode::FixedView;
 
     /* setup objects in scene and create opengl buffers for meshes */
     sScene.boatMesh = meshCreate(boat::vertices, boat::indices, GL_STATIC_DRAW, GL_STATIC_DRAW);
@@ -170,11 +159,18 @@ void sceneInit(float width, float height) {
     sScene.boatSpinRadPerSecond = M_PI / 3.0f;
     sScene.boatMovementPerSecond = 3.0f;
 
-    sScene.boatXPos = 0;
-    sScene.boatZPos = 0;
+    sScene.boatPosition = {0,0,0};
     sScene.boatXZAngle = M_PI;
 
-    /* load shader from file */
+    /* initialize camera */
+    sScene.camera = cameraCreate(width, height, to_radians(45.0f), 0.01f, 500.0f, {10.0f, 14.0f, 10.0f},
+                                 {0.0f, 4.0f, 0.0f});
+    sScene.zoomSpeedMultiplier = 0.05f;
+    sScene.cameraMode = CameraMode::FixedView;
+
+    sScene.cameraPositionOffsetToBoat = sScene.camera.position-sScene.boatPosition;
+
+            /* load shader from file */
     sScene.shaderColor = shaderLoad("shader/default.vert", "shader/default.frag");
 }
 
@@ -204,24 +200,34 @@ void sceneUpdate(float dt) {
     }
 
     /* if 'w' or 's' pressed: update boat position, depending on the boat rotation angle */
-    int moveDirZ = 0;
     if (sInput.buttonPressed[0]) {  // 'w' pressed
-        sScene.boatXPos += std::sin(sScene.boatXZAngle + (float) M_PI_2) * sScene.boatMovementPerSecond * dt;
-        sScene.boatZPos += std::cos(sScene.boatXZAngle + (float) M_PI_2) * sScene.boatMovementPerSecond * dt;
+        sScene.boatPosition.x += std::sin(sScene.boatXZAngle + (float) M_PI_2) * sScene.boatMovementPerSecond * dt;
+        sScene.boatPosition.z += std::cos(sScene.boatXZAngle + (float) M_PI_2) * sScene.boatMovementPerSecond * dt;
     } else if (sInput.buttonPressed[1]) {  // 's' pressed
-        sScene.boatXPos -= std::sin(sScene.boatXZAngle + (float) M_PI_2) * sScene.boatMovementPerSecond * dt;
-        sScene.boatZPos -= std::cos(sScene.boatXZAngle + (float) M_PI_2) * sScene.boatMovementPerSecond * dt;
+        sScene.boatPosition.x -= std::sin(sScene.boatXZAngle + (float) M_PI_2) * sScene.boatMovementPerSecond * dt;
+        sScene.boatPosition.z -= std::cos(sScene.boatXZAngle + (float) M_PI_2) * sScene.boatMovementPerSecond * dt;
+    }
+
+    /* apply boat rotation */
+    sScene.boatTransformationMatrix = Matrix4D::rotationY(sScene.boatXZAngle);
+
+    /* apply boat position */
+    sScene.boatTransformationMatrix =
+            Matrix4D::translation(sScene.boatPosition) * sScene.boatTransformationMatrix;
+
+
+
     /* if '1' or '2' is  pressed, change the camera mode*/
-    if(sInput.buttonPressed[4]){
+    if (sInput.buttonPressed[4]) {
         sScene.cameraMode = CameraMode::FixedView;
-    }else if(sInput.buttonPressed[5]){
+    } else if (sInput.buttonPressed[5]) {
         sScene.cameraMode = CameraMode::ThirdPersonView;
     }
 
     /* TODO: if in ThirdPersonView: update camera position and lookAt*/
-    if(sScene.cameraMode == CameraMode::ThirdPersonView){
-        //sScene.camera.lookAt = boot.position;
-        //sScene.camera.position = (cameraToBootDistance*zoom)*boot.rotationMatrix * boot.positionMatrix
+    if (sScene.cameraMode == CameraMode::ThirdPersonView) {
+        sScene.camera.lookAt = sScene.boatPosition;
+        sScene.camera.position =  Matrix4D::translation(sScene.cameraPositionOffsetToBoat) * sScene.boatPosition;
     }
 
 //    /* update cube transformation matrix to include new rotation if one of the keys was pressed */
@@ -246,14 +252,6 @@ void sceneUpdate(float dt) {
 //            sScene.camera.position;
 //        }
 //    }
-
-
-    /* apply boat rotation */
-    sScene.boatTransformationMatrix = Matrix4D::rotationY(sScene.boatXZAngle);
-
-    /* apply boat position */
-    sScene.boatTransformationMatrix =
-            Matrix4D::translation({sScene.boatXPos, 0, sScene.boatZPos}) * sScene.boatTransformationMatrix;
 
 }
 
