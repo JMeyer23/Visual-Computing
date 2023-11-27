@@ -1,5 +1,6 @@
 #include <cstdlib>
 #include <iostream>
+#include <cmath>
 
 #include "mygl/shader.h"
 #include "mygl/mesh.h"
@@ -18,10 +19,14 @@ namespace boatParts {
 
     const Matrix4D bodyTransform = Matrix4D::translation({0.0f, 4.0f, 0.0f}) * Matrix4D::scale(2.5f, 1.8f, 7.0f);
     const Matrix4D bridgeTransform = Matrix4D::translation({0.0f, 7.3f, -4.35f}) * Matrix4D::scale(0.75f, 1.5f, 1.3f);
-    const Matrix4D leftBulwarkTransform = Matrix4D::translation({-2.2f, 6.4f, 0.0f}) * Matrix4D::scale(0.3f, 0.6f, 6.4f);
-    const Matrix4D rightBulwarkTransform = Matrix4D::translation({2.2f, 6.4f, 0.0f}) * Matrix4D::scale(0.3f, 0.6f, 6.4f);
-    const Matrix4D frontBulwarkTransform = Matrix4D::translation({0.0f, 6.4f, 6.7f}) * Matrix4D::scale(2.5f, 0.6f, 0.3f);
-    const Matrix4D backBulwarkTransform = Matrix4D::translation({0.0f, 6.4f, -6.7f}) * Matrix4D::scale(2.5f, 0.6f, 0.3f);
+    const Matrix4D leftBulwarkTransform =
+            Matrix4D::translation({-2.2f, 6.4f, 0.0f}) * Matrix4D::scale(0.3f, 0.6f, 6.4f);
+    const Matrix4D rightBulwarkTransform =
+            Matrix4D::translation({2.2f, 6.4f, 0.0f}) * Matrix4D::scale(0.3f, 0.6f, 6.4f);
+    const Matrix4D frontBulwarkTransform =
+            Matrix4D::translation({0.0f, 6.4f, 6.7f}) * Matrix4D::scale(2.5f, 0.6f, 0.3f);
+    const Matrix4D backBulwarkTransform =
+            Matrix4D::translation({0.0f, 6.4f, -6.7f}) * Matrix4D::scale(2.5f, 0.6f, 0.3f);
     const Matrix4D mastTransform = Matrix4D::translation({0.0f, 8.8f, 2.35f}) * Matrix4D::scale(0.3f, 3.0f, 0.3f);
 
 }
@@ -37,9 +42,8 @@ struct {
     Water water;
     Matrix4D waterModelMatrix;
 
-    /* cube mesh and transformations */
-    Mesh cubeMesh;
-
+    /* boat fixed properties */
+    Mesh boatMesh;
     Matrix4D bodyTransformMatrix;
     Matrix4D bridgeTransformMatrix;
     Matrix4D leftBulwarkTransformMatrix;
@@ -47,7 +51,13 @@ struct {
     Matrix4D frontBulwarkTransformMatrix;
     Matrix4D backBulwarkTransformMatrix;
     Matrix4D mastTransformMatrix;
-    float cubeSpinRadPerSecond;
+    float SpinRadPerSecond;
+    float MovementPerSecond;
+
+    /* boat dynamic properties*/
+    float XPos;
+    float ZPos;
+    float steerAngle;
 
     /* shader */
     ShaderProgram shaderColor;
@@ -124,7 +134,7 @@ void windowResizeCallback(GLFWwindow *window, int width, int height) {
     sScene.camera.height = height;
 }
 
-/* function to setup and initialize the whole scene */
+/* function to set up and initialize the whole scene */
 void sceneInit(float width, float height) {
     /* initialize camera */
     sScene.camera = cameraCreate(width, height, to_radians(45.0f), 0.01f, 500.0f, {10.0f, 14.0f, 10.0f},
@@ -132,7 +142,7 @@ void sceneInit(float width, float height) {
     sScene.zoomSpeedMultiplier = 0.05f;
 
     /* setup objects in scene and create opengl buffers for meshes */
-    sScene.cubeMesh = meshCreate(cube::vertices, cube::indices, GL_STATIC_DRAW, GL_STATIC_DRAW);
+    sScene.boatMesh = meshCreate(cube::vertices, cube::indices, GL_STATIC_DRAW, GL_STATIC_DRAW);
     sScene.water = waterCreate(waterPlane::color);
 
     /* setup transformation matrices for objects */
@@ -146,7 +156,13 @@ void sceneInit(float width, float height) {
     sScene.backBulwarkTransformMatrix = boatParts::backBulwarkTransform;
     sScene.mastTransformMatrix = boatParts::mastTransform;
 
-    sScene.cubeSpinRadPerSecond = M_PI / 2.0f;
+    sScene.SpinRadPerSecond = M_PI / 3.0f;
+    sScene.MovementPerSecond = 3.0f;
+
+    sScene.XPos = 0;
+    sScene.ZPos = 0;
+    // in rad!
+    sScene.steerAngle = 0;
 
     /* load shader from file */
     sScene.shaderColor = shaderLoad("shader/default.vert", "shader/default.frag");
@@ -162,41 +178,41 @@ void sceneUpdate(float dt) {
         moveDirZ = -1;
     }
 
-    /* if 'a' or 'd' pressed and the boat is moving, steer the boat left or right */
-    int steerDir = 0;
-    if (moveDirZ != 0) {
-        if (sInput.buttonPressed[2]) {  // 'a' pressed
-            steerDir = -1;
-        } else if (sInput.buttonPressed[3]) {  // 'd' pressed
-            steerDir = 1;
-        }
+    /* if 'a' or 'd' pressed, steer the boat left or right */
+    if (sInput.buttonPressed[2]) {  // 'a' pressed
+        sScene.steerAngle += sScene.SpinRadPerSecond * dt;
+    } else if (sInput.buttonPressed[3]) {  // 'd' pressed
+        sScene.steerAngle -= sScene.SpinRadPerSecond * dt;
     }
 
-    /* update boat transformation matrices to include new movements */
-    if (moveDirZ != 0) {
-        /* update boat position */
-        Vector3D translation = {moveDirZ * 5.0f * dt, 0.0f, 0.0f};  // Adjust the speed as needed
-        sScene.bodyTransformMatrix = Matrix4D::translation(translation) * sScene.bodyTransformMatrix;
-        sScene.bridgeTransformMatrix = Matrix4D::translation(translation) * sScene.bridgeTransformMatrix;
-        sScene.leftBulwarkTransformMatrix = Matrix4D::translation(translation) * sScene.leftBulwarkTransformMatrix;
-        sScene.rightBulwarkTransformMatrix = Matrix4D::translation(translation) * sScene.rightBulwarkTransformMatrix;
-        sScene.frontBulwarkTransformMatrix = Matrix4D::translation(translation) * sScene.frontBulwarkTransformMatrix;
-        sScene.backBulwarkTransformMatrix = Matrix4D::translation(translation) * sScene.backBulwarkTransformMatrix;
-        sScene.mastTransformMatrix = Matrix4D::translation(translation) * sScene.mastTransformMatrix;
+    /* update boat rotation using the original boat parts*/
+    sScene.bodyTransformMatrix = Matrix4D::rotationY(sScene.steerAngle) * boatParts::bodyTransform;
+    sScene.bridgeTransformMatrix = Matrix4D::rotationY(sScene.steerAngle) * boatParts::bridgeTransform;
+    sScene.leftBulwarkTransformMatrix = Matrix4D::rotationY(sScene.steerAngle) * boatParts::leftBulwarkTransform;
+    sScene.rightBulwarkTransformMatrix = Matrix4D::rotationY(sScene.steerAngle) * boatParts::rightBulwarkTransform;
+    sScene.frontBulwarkTransformMatrix = Matrix4D::rotationY(sScene.steerAngle) * boatParts::frontBulwarkTransform;
+    sScene.backBulwarkTransformMatrix = Matrix4D::rotationY(sScene.steerAngle) * boatParts::backBulwarkTransform;
+    sScene.mastTransformMatrix = Matrix4D::rotationY(sScene.steerAngle) * boatParts::mastTransform;
 
-        /* update boat rotation (steering) */
-        if (steerDir != 0) {
-            float steerAngle = steerDir * sScene.cubeSpinRadPerSecond * dt;
-            sScene.bodyTransformMatrix = Matrix4D::rotationY(steerAngle) * sScene.bodyTransformMatrix;
-            sScene.bridgeTransformMatrix = Matrix4D::rotationY(steerAngle) * sScene.bridgeTransformMatrix;
-            sScene.leftBulwarkTransformMatrix = Matrix4D::rotationY(steerAngle) * sScene.leftBulwarkTransformMatrix;
-            sScene.rightBulwarkTransformMatrix = Matrix4D::rotationY(steerAngle) * sScene.rightBulwarkTransformMatrix;
-            sScene.frontBulwarkTransformMatrix = Matrix4D::rotationY(steerAngle) * sScene.frontBulwarkTransformMatrix;
-            sScene.backBulwarkTransformMatrix = Matrix4D::rotationY(steerAngle) * sScene.backBulwarkTransformMatrix;
-            sScene.mastTransformMatrix = Matrix4D::rotationY(steerAngle) * sScene.mastTransformMatrix;
-        }
+    /* update boat position depending on the rotation*/
+    //Todo: change sin/cos, same with -= for backwards, apply to transform matrices
+    if (moveDirZ == 1) {
+        sScene.XPos += std::sin(sScene.steerAngle) * sScene.MovementPerSecond * dt;
+        sScene.ZPos += std::cos(sScene.steerAngle) * sScene.MovementPerSecond * dt;
+    } else if (moveDirZ == -1) {
+        sScene.XPos -= std::sin(sScene.steerAngle) * sScene.MovementPerSecond * dt;
+        sScene.ZPos -= std::cos(sScene.steerAngle) * sScene.MovementPerSecond * dt;
     }
 
+    /* apply boat position */
+    Vector3D translation = {sScene.XPos, 0.0f, sScene.ZPos};  // Adjust the speed as needed
+    sScene.bodyTransformMatrix = Matrix4D::translation(translation) * sScene.bodyTransformMatrix;
+    sScene.bridgeTransformMatrix = Matrix4D::translation(translation) * sScene.bridgeTransformMatrix;
+    sScene.leftBulwarkTransformMatrix = Matrix4D::translation(translation) * sScene.leftBulwarkTransformMatrix;
+    sScene.rightBulwarkTransformMatrix = Matrix4D::translation(translation) * sScene.rightBulwarkTransformMatrix;
+    sScene.frontBulwarkTransformMatrix = Matrix4D::translation(translation) * sScene.frontBulwarkTransformMatrix;
+    sScene.backBulwarkTransformMatrix = Matrix4D::translation(translation) * sScene.backBulwarkTransformMatrix;
+    sScene.mastTransformMatrix = Matrix4D::translation(translation) * sScene.mastTransformMatrix;
 }
 
 /* function to draw all objects in the scene */
@@ -219,32 +235,32 @@ void sceneDraw() {
 
         /* draw boat */
         shaderUniform(sScene.shaderColor, "uModel", sScene.bodyTransformMatrix);
-        glBindVertexArray(sScene.cubeMesh.vao);
-        glDrawElements(GL_TRIANGLES, sScene.cubeMesh.size_ibo, GL_UNSIGNED_INT, nullptr);
+        glBindVertexArray(sScene.boatMesh.vao);
+        glDrawElements(GL_TRIANGLES, sScene.boatMesh.size_ibo, GL_UNSIGNED_INT, nullptr);
 
         shaderUniform(sScene.shaderColor, "uModel", sScene.bridgeTransformMatrix);
-        glBindVertexArray(sScene.cubeMesh.vao);
-        glDrawElements(GL_TRIANGLES, sScene.cubeMesh.size_ibo, GL_UNSIGNED_INT, nullptr);
+        glBindVertexArray(sScene.boatMesh.vao);
+        glDrawElements(GL_TRIANGLES, sScene.boatMesh.size_ibo, GL_UNSIGNED_INT, nullptr);
 
         shaderUniform(sScene.shaderColor, "uModel", sScene.leftBulwarkTransformMatrix);
-        glBindVertexArray(sScene.cubeMesh.vao);
-        glDrawElements(GL_TRIANGLES, sScene.cubeMesh.size_ibo, GL_UNSIGNED_INT, nullptr);
+        glBindVertexArray(sScene.boatMesh.vao);
+        glDrawElements(GL_TRIANGLES, sScene.boatMesh.size_ibo, GL_UNSIGNED_INT, nullptr);
 
         shaderUniform(sScene.shaderColor, "uModel", sScene.rightBulwarkTransformMatrix);
-        glBindVertexArray(sScene.cubeMesh.vao);
-        glDrawElements(GL_TRIANGLES, sScene.cubeMesh.size_ibo, GL_UNSIGNED_INT, nullptr);
+        glBindVertexArray(sScene.boatMesh.vao);
+        glDrawElements(GL_TRIANGLES, sScene.boatMesh.size_ibo, GL_UNSIGNED_INT, nullptr);
 
         shaderUniform(sScene.shaderColor, "uModel", sScene.frontBulwarkTransformMatrix);
-        glBindVertexArray(sScene.cubeMesh.vao);
-        glDrawElements(GL_TRIANGLES, sScene.cubeMesh.size_ibo, GL_UNSIGNED_INT, nullptr);
+        glBindVertexArray(sScene.boatMesh.vao);
+        glDrawElements(GL_TRIANGLES, sScene.boatMesh.size_ibo, GL_UNSIGNED_INT, nullptr);
 
         shaderUniform(sScene.shaderColor, "uModel", sScene.backBulwarkTransformMatrix);
-        glBindVertexArray(sScene.cubeMesh.vao);
-        glDrawElements(GL_TRIANGLES, sScene.cubeMesh.size_ibo, GL_UNSIGNED_INT, nullptr);
+        glBindVertexArray(sScene.boatMesh.vao);
+        glDrawElements(GL_TRIANGLES, sScene.boatMesh.size_ibo, GL_UNSIGNED_INT, nullptr);
 
         shaderUniform(sScene.shaderColor, "uModel", sScene.mastTransformMatrix);
-        glBindVertexArray(sScene.cubeMesh.vao);
-        glDrawElements(GL_TRIANGLES, sScene.cubeMesh.size_ibo, GL_UNSIGNED_INT, nullptr);
+        glBindVertexArray(sScene.boatMesh.vao);
+        glDrawElements(GL_TRIANGLES, sScene.boatMesh.size_ibo, GL_UNSIGNED_INT, nullptr);
 
 
     }
@@ -302,7 +318,7 @@ int main(int argc, char **argv) {
     /* delete opengl shader and buffers */
     shaderDelete(sScene.shaderColor);
     waterDelete(sScene.water);
-    meshDelete(sScene.cubeMesh);
+    meshDelete(sScene.boatMesh);
 
     /* cleanup glfw/glcontext */
     windowDelete(window);
