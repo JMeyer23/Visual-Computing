@@ -8,34 +8,32 @@
 #include "mygl/camera.h"
 #include "water.h"
 
+
 /* translation and color for the water plane */
 namespace waterPlane {
     const Vector4D color = {0.0f, 0.0f, 0.35f, 1.0f};
     const Matrix4D trans = Matrix4D::identity();
 }
 
-/* translation and scale for the scaled cube */
-namespace boatParts {
-
-    const Matrix4D bodyTransform = Matrix4D::translation({0.0f, 4.0f, 0.0f}) * Matrix4D::scale(2.5f, 1.8f, 7.0f);
-    const Matrix4D bridgeTransform = Matrix4D::translation({0.0f, 7.3f, -4.35f}) * Matrix4D::scale(0.75f, 1.5f, 1.3f);
-    const Matrix4D leftBulwarkTransform =
-            Matrix4D::translation({-2.2f, 6.4f, 0.0f}) * Matrix4D::scale(0.3f, 0.6f, 6.4f);
-    const Matrix4D rightBulwarkTransform =
-            Matrix4D::translation({2.2f, 6.4f, 0.0f}) * Matrix4D::scale(0.3f, 0.6f, 6.4f);
-    const Matrix4D frontBulwarkTransform =
-            Matrix4D::translation({0.0f, 6.4f, 6.7f}) * Matrix4D::scale(2.5f, 0.6f, 0.3f);
-    const Matrix4D backBulwarkTransform =
-            Matrix4D::translation({0.0f, 6.4f, -6.7f}) * Matrix4D::scale(2.5f, 0.6f, 0.3f);
-    const Matrix4D mastTransform = Matrix4D::translation({0.0f, 8.8f, 2.35f}) * Matrix4D::scale(0.3f, 3.0f, 0.3f);
-
+/* translation and scale for the scaled boat */
+namespace scaledBoat {
+    const Matrix4D scale = Matrix4D::scale(0.5f, 0.5f, 0.5f);
+    const Matrix4D trans = Matrix4D::translation({0.0f, 0.0f, 0.0f});
 }
+
+enum struct CameraMode {
+    FixedView,
+    ThirdPersonView
+};
 
 /* struct holding all necessary state variables for scene */
 struct {
     /* camera */
     Camera camera;
     float zoomSpeedMultiplier;
+    CameraMode cameraMode;
+    Vector3D cameraPositionOffsetToBoat;
+
 
     /* water */
     WaterSim waterSim;
@@ -44,31 +42,25 @@ struct {
 
     /* boat fixed properties */
     Mesh boatMesh;
-    Matrix4D bodyTransformMatrix;
-    Matrix4D bridgeTransformMatrix;
-    Matrix4D leftBulwarkTransformMatrix;
-    Matrix4D rightBulwarkTransformMatrix;
-    Matrix4D frontBulwarkTransformMatrix;
-    Matrix4D backBulwarkTransformMatrix;
-    Matrix4D mastTransformMatrix;
-    float SpinRadPerSecond;
-    float MovementPerSecond;
+    Matrix4D boatScalingMatrix;
+    Matrix4D boatTranslationMatrix;
+    Matrix4D boatTransformationMatrix;
+    float boatSpinRadPerSecond;
+    float boatMovementPerSecond;
 
     /* boat dynamic properties*/
-    float XPos;
-    float ZPos;
-    float steerAngle;
+    Vector3D boatPosition;
+    float boatXZAngle;
 
     /* shader */
     ShaderProgram shaderColor;
-
 } sScene;
 
 /* struct holding all state variables for input */
 struct {
     bool mouseLeftButtonPressed = false;
     Vector2D mousePressStart;
-    bool buttonPressed[4] = {false, false, false, false};
+    bool buttonPressed[6] = {false, false, false, false, false, false};
 } sInput;
 
 /* GLFW callback function for keyboard events */
@@ -85,7 +77,7 @@ void keyCallback(GLFWwindow *window, int key, int scancode, int action, int mods
         screenshotToPNG("screenshot.png");
     }
 
-    /* input for cube control */
+    /* input for boat control */
     if (key == GLFW_KEY_W) {
         sInput.buttonPressed[0] = (action == GLFW_PRESS || action == GLFW_REPEAT);
     }
@@ -99,6 +91,15 @@ void keyCallback(GLFWwindow *window, int key, int scancode, int action, int mods
     if (key == GLFW_KEY_D) {
         sInput.buttonPressed[3] = (action == GLFW_PRESS || action == GLFW_REPEAT);
     }
+
+    //Switch Camera View
+    if (key == GLFW_KEY_1) {
+        sInput.buttonPressed[4] = (action == GLFW_PRESS || action == GLFW_REPEAT);
+    }
+    if (key == GLFW_KEY_2) {
+        sInput.buttonPressed[5] = (action == GLFW_PRESS || action == GLFW_REPEAT);
+    }
+
 }
 
 /* GLFW callback function for mouse position events */
@@ -136,82 +137,226 @@ void windowResizeCallback(GLFWwindow *window, int width, int height) {
 
 /* function to set up and initialize the whole scene */
 void sceneInit(float width, float height) {
-    /* initialize camera */
-    sScene.camera = cameraCreate(width, height, to_radians(45.0f), 0.01f, 500.0f, {10.0f, 14.0f, 10.0f},
-                                 {0.0f, 4.0f, 0.0f});
-    sScene.zoomSpeedMultiplier = 0.05f;
 
     /* setup objects in scene and create opengl buffers for meshes */
-    sScene.boatMesh = meshCreate(cube::vertices, cube::indices, GL_STATIC_DRAW, GL_STATIC_DRAW);
+    sScene.boatMesh = meshCreate(boat::vertices, boat::indices, GL_STATIC_DRAW, GL_STATIC_DRAW);
     sScene.water = waterCreate(waterPlane::color);
 
     /* setup transformation matrices for objects */
     sScene.waterModelMatrix = waterPlane::trans;
 
-    sScene.bodyTransformMatrix = boatParts::bodyTransform;
-    sScene.bridgeTransformMatrix = boatParts::bridgeTransform;
-    sScene.leftBulwarkTransformMatrix = boatParts::leftBulwarkTransform;
-    sScene.rightBulwarkTransformMatrix = boatParts::rightBulwarkTransform;
-    sScene.frontBulwarkTransformMatrix = boatParts::frontBulwarkTransform;
-    sScene.backBulwarkTransformMatrix = boatParts::backBulwarkTransform;
-    sScene.mastTransformMatrix = boatParts::mastTransform;
+    sScene.boatScalingMatrix = scaledBoat::scale;
+    sScene.boatTranslationMatrix = scaledBoat::trans;
 
-    sScene.SpinRadPerSecond = M_PI / 3.0f;
-    sScene.MovementPerSecond = 3.0f;
+    sScene.boatTransformationMatrix = Matrix4D::identity();
 
-    sScene.XPos = 0;
-    sScene.ZPos = 0;
-    // in rad!
-    sScene.steerAngle = 0;
+    sScene.boatSpinRadPerSecond = M_PI / 3.0f;
+    sScene.boatMovementPerSecond = 3.0f;
+
+    sScene.boatPosition = {0, 0, 0};
+    sScene.boatXZAngle = M_PI;
+
+    /* initialize camera */
+    sScene.camera = cameraCreate(width, height, to_radians(45.0f), 0.01f, 500.0f, {10.0f, 14.0f, 10.0f},
+                                 {0.0f, 4.0f, 0.0f});
+    sScene.zoomSpeedMultiplier = 0.05f;
+    sScene.cameraMode = CameraMode::FixedView;
+
+    sScene.cameraPositionOffsetToBoat = sScene.camera.position - sScene.boatPosition;
 
     /* load shader from file */
     sScene.shaderColor = shaderLoad("shader/default.vert", "shader/default.frag");
 }
 
-/* function to move and update objects in scene (e.g., rotate cube according to user input) */
+/* function to move and update objects in scene (e.g., rotate boat according to user input) */
 void sceneUpdate(float dt) {
-    /* if 'w' or 's' pressed, move the boat forward or backward along the z-axis */
-    int moveDirZ = 0;
+//    /* update water model matrix using 3 wave functions defined in water.h */
+//    for (unsigned i = 0; i < sScene.water.vertices.size(); i++) {
+//        sScene.water.vertices[i].pos[1] = 0.0f;
+//        for (unsigned j = 0; j < 3; j++) {
+//            sScene.water.vertices[i].pos[1] += sScene.waterSim.parameter[j].amplitude *
+//                                               sin(sScene.waterSim.parameter[j].omega *
+//                                                   dot(sScene.waterSim.parameter[j].direction,
+//                                                       Vector2D{sScene.water.vertices[i].pos[0],
+//                                                                sScene.water.vertices[i].pos[2]}) +
+//                                                   sScene.waterSim.accumTime * sScene.waterSim.parameter[j].phi);
+//        }
+//    }
+//    sScene.water.mesh = meshCreate(sScene.water.vertices, grid::indices, GL_DYNAMIC_DRAW, GL_STATIC_DRAW);
+//
+//
+//
+//    /* if 'a' or 'd' are pressed: update boat rotation angle  */
+//    /* only allow rotation during movement*/
+//    if (sInput.buttonPressed[0] || sInput.buttonPressed[1]) {
+//        if (sInput.buttonPressed[2]) {  // 'a' pressed
+//            sScene.boatXZAngle += sScene.boatSpinRadPerSecond * dt;
+//        } else if (sInput.buttonPressed[3]) {  // 'd' pressed
+//            sScene.boatXZAngle -= sScene.boatSpinRadPerSecond * dt;
+//        }
+//    }
+//
+//
+//    /* if 'w' or 's' pressed: update boat+camera position, depending on the boat rotation angle and camera mode*/
+//    if (sInput.buttonPressed[0]) {  // 'w' pressed
+//        sScene.boatPosition.x += std::sin(sScene.boatXZAngle + (float) M_PI_2) * sScene.boatMovementPerSecond * dt;
+//        sScene.boatPosition.z += std::cos(sScene.boatXZAngle + (float) M_PI_2) * sScene.boatMovementPerSecond * dt;
+//        if (sScene.cameraMode == CameraMode::ThirdPersonView) {
+//            sScene.camera.position.x += std::sin(sScene.boatXZAngle + (float) M_PI_2) * sScene.boatMovementPerSecond * dt;
+//            sScene.camera.position.z += std::sin(sScene.boatXZAngle + (float) M_PI_2) * sScene.boatMovementPerSecond * dt;
+//        }
+//    } else if (sInput.buttonPressed[1]) {  // 's' pressed
+//        sScene.boatPosition.x -= std::sin(sScene.boatXZAngle + (float) M_PI_2) * sScene.boatMovementPerSecond * dt;
+//        sScene.boatPosition.z -= std::cos(sScene.boatXZAngle + (float) M_PI_2) * sScene.boatMovementPerSecond * dt;
+//        if (sScene.cameraMode == CameraMode::ThirdPersonView) {
+//            sScene.camera.position.x -= std::sin(sScene.boatXZAngle + (float) M_PI_2) * sScene.boatMovementPerSecond * dt;
+//            sScene.camera.position.z -= std::sin(sScene.boatXZAngle + (float) M_PI_2) * sScene.boatMovementPerSecond * dt;
+//        }
+//    }
+//
+//    /* apply boat rotation */
+//    sScene.boatTransformationMatrix = Matrix4D::rotationY(sScene.boatXZAngle);
+//
+//    /* apply boat position */
+//    sScene.boatTransformationMatrix =
+//            Matrix4D::translation(sScene.boatPosition) * sScene.boatTransformationMatrix;
+//
+//
+//    /* if in ThirdPersonView: update camera lookAt*/
+//    if (sScene.cameraMode == CameraMode::ThirdPersonView) {
+//        sScene.camera.lookAt = sScene.boatPosition;
+//    }
+//
+//    /* if '1' or '2' is  pressed, change the camera mode*/
+//    if (sInput.buttonPressed[4]) {
+//        sScene.cameraMode = CameraMode::FixedView;
+//    } else if (sInput.buttonPressed[5]) {
+//        sScene.cameraMode = CameraMode::ThirdPersonView;
+//    }
+
+
+    /* update water model matrix using 3 wave functions defined in water.h */
+    for (unsigned i = 0; i < sScene.water.vertices.size(); i++) {
+        sScene.water.vertices[i].pos[1] = 0.0f;
+        for (unsigned j = 0; j < 3; j++) {
+            sScene.water.vertices[i].pos[1] += sScene.waterSim.parameter[j].amplitude *
+                                               sin(sScene.waterSim.parameter[j].omega *
+                                                   dot(sScene.waterSim.parameter[j].direction,
+                                                       Vector2D{sScene.water.vertices[i].pos[0],
+                                                                sScene.water.vertices[i].pos[2]}) +
+                                                   sScene.waterSim.accumTime * sScene.waterSim.parameter[j].phi);
+        }
+    }
+    sScene.water.mesh = meshCreate(sScene.water.vertices, grid::indices, GL_DYNAMIC_DRAW, GL_STATIC_DRAW);
+
+    /* calculate height of water at boat's position */
+    float waterHeight = 0.0f;
+    for (unsigned j = 0; j < 3; j++) {
+        waterHeight += sScene.waterSim.parameter[j].amplitude *
+                       sin(sScene.waterSim.parameter[j].omega *
+                           dot(sScene.waterSim.parameter[j].direction,
+                               Vector2D{sScene.boatPosition.x, sScene.boatPosition.z}) +
+                           sScene.waterSim.accumTime * sScene.waterSim.parameter[j].phi);
+    }
+
+    /* update boat translation along the y-axis */
+    sScene.boatPosition.y = waterHeight;
+
+    /* update boat rotation to align with waves */
+    Vector3D triangleCenter = sScene.boatPosition;
+    Vector3D triangleCorner1 = triangleCenter + Vector3D{1.0f, 0.0f, 0.0f};  // arbitrary point in the x-axis
+    Vector3D triangleCorner2 = triangleCenter + Vector3D{0.0f, 0.0f, 1.0f};  // arbitrary point in the z-axis
+
+    /* calculate triangle corner heights */
+    float height1 = 0.0f;
+    float height2 = 0.0f;
+    float heightCenter = 0.0f;
+
+    for (unsigned j = 0; j < 3; j++) {
+        height1 += sScene.waterSim.parameter[j].amplitude *
+                   sin(sScene.waterSim.parameter[j].omega *
+                       dot(sScene.waterSim.parameter[j].direction, Vector2D{triangleCorner1.x, triangleCorner1.z}) +
+                       sScene.waterSim.accumTime * sScene.waterSim.parameter[j].phi);
+
+        height2 += sScene.waterSim.parameter[j].amplitude *
+                   sin(sScene.waterSim.parameter[j].omega *
+                       dot(sScene.waterSim.parameter[j].direction, Vector2D{triangleCorner2.x, triangleCorner2.z}) +
+                       sScene.waterSim.accumTime * sScene.waterSim.parameter[j].phi);
+
+        heightCenter += sScene.waterSim.parameter[j].amplitude *
+                        sin(sScene.waterSim.parameter[j].omega *
+                            dot(sScene.waterSim.parameter[j].direction, Vector2D{triangleCenter.x, triangleCenter.z}) +
+                            sScene.waterSim.accumTime * sScene.waterSim.parameter[j].phi);
+    }
+
+    /* calculate vectors for the rotation matrix */
+    Vector3D upVector = {0.0f, 1.0f, 0.0f};  // up vector in world space
+    Vector3D boatForwardVector = normalize(triangleCorner1 - triangleCenter);
+    Vector3D boatRightVector = cross(upVector, boatForwardVector);
+    Vector3D boatUpVector = cross(boatForwardVector, boatRightVector);
+
+    /* create rotation matrix to align the boat with the waves */
+    Matrix4D rotationMatrix = Matrix4D::identity();
+    for (int i = 0; i < 3; i++) {
+        rotationMatrix[0][i] = boatRightVector[i];
+        rotationMatrix[1][i] = boatUpVector[i];
+        rotationMatrix[2][i] = boatForwardVector[i];
+    }
+
+    /* apply boat rotation */
+    sScene.boatTransformationMatrix = rotationMatrix * sScene.boatTransformationMatrix;
+
+    /* if 'a' or 'd' are pressed: update boat rotation angle */
+    /* only allow rotation during movement*/
+    if (sInput.buttonPressed[0] || sInput.buttonPressed[1]) {
+        if (sInput.buttonPressed[2]) {  // 'a' pressed
+            sScene.boatXZAngle += sScene.boatSpinRadPerSecond * dt;
+        } else if (sInput.buttonPressed[3]) {  // 'd' pressed
+            sScene.boatXZAngle -= sScene.boatSpinRadPerSecond * dt;
+        }
+    }
+
+    /* if 'w' or 's' pressed: update boat+camera position, depending on the boat rotation angle and camera mode*/
     if (sInput.buttonPressed[0]) {  // 'w' pressed
-        moveDirZ = 1;
+        sScene.boatPosition.x += std::sin(sScene.boatXZAngle + (float) M_PI_2) * sScene.boatMovementPerSecond * dt;
+        sScene.boatPosition.z += std::cos(sScene.boatXZAngle + (float) M_PI_2) * sScene.boatMovementPerSecond * dt;
+        if (sScene.cameraMode == CameraMode::ThirdPersonView) {
+            sScene.camera.position.x +=
+                    std::sin(sScene.boatXZAngle + (float) M_PI_2) * sScene.boatMovementPerSecond * dt;
+            sScene.camera.position.z +=
+                    std::sin(sScene.boatXZAngle + (float) M_PI_2) * sScene.boatMovementPerSecond * dt;
+        }
     } else if (sInput.buttonPressed[1]) {  // 's' pressed
-        moveDirZ = -1;
+        sScene.boatPosition.x -= std::sin(sScene.boatXZAngle + (float) M_PI_2) * sScene.boatMovementPerSecond * dt;
+        sScene.boatPosition.z -= std::cos(sScene.boatXZAngle + (float) M_PI_2) * sScene.boatMovementPerSecond * dt;
+        if (sScene.cameraMode == CameraMode::ThirdPersonView) {
+            sScene.camera.position.x -=
+                    std::sin(sScene.boatXZAngle + (float) M_PI_2) * sScene.boatMovementPerSecond * dt;
+            sScene.camera.position.z -=
+                    std::sin(sScene.boatXZAngle + (float) M_PI_2) * sScene.boatMovementPerSecond * dt;
+        }
     }
 
-    /* if 'a' or 'd' pressed, steer the boat left or right */
-    if (sInput.buttonPressed[2]) {  // 'a' pressed
-        sScene.steerAngle += sScene.SpinRadPerSecond * dt;
-    } else if (sInput.buttonPressed[3]) {  // 'd' pressed
-        sScene.steerAngle -= sScene.SpinRadPerSecond * dt;
-    }
-
-    /* update boat rotation using the original boat parts*/
-    sScene.bodyTransformMatrix = Matrix4D::rotationY(sScene.steerAngle) * boatParts::bodyTransform;
-    sScene.bridgeTransformMatrix = Matrix4D::rotationY(sScene.steerAngle) * boatParts::bridgeTransform;
-    sScene.leftBulwarkTransformMatrix = Matrix4D::rotationY(sScene.steerAngle) * boatParts::leftBulwarkTransform;
-    sScene.rightBulwarkTransformMatrix = Matrix4D::rotationY(sScene.steerAngle) * boatParts::rightBulwarkTransform;
-    sScene.frontBulwarkTransformMatrix = Matrix4D::rotationY(sScene.steerAngle) * boatParts::frontBulwarkTransform;
-    sScene.backBulwarkTransformMatrix = Matrix4D::rotationY(sScene.steerAngle) * boatParts::backBulwarkTransform;
-    sScene.mastTransformMatrix = Matrix4D::rotationY(sScene.steerAngle) * boatParts::mastTransform;
-
-    /* update boat position depending on the rotation*/
-    if (moveDirZ == 1) {
-        sScene.XPos += std::sin(sScene.steerAngle) * sScene.MovementPerSecond * dt;
-        sScene.ZPos += std::cos(sScene.steerAngle) * sScene.MovementPerSecond * dt;
-    } else if (moveDirZ == -1) {
-        sScene.XPos -= std::sin(sScene.steerAngle) * sScene.MovementPerSecond * dt;
-        sScene.ZPos -= std::cos(sScene.steerAngle) * sScene.MovementPerSecond * dt;
-    }
+    /* apply boat rotation */
+    sScene.boatTransformationMatrix = Matrix4D::rotationY(sScene.boatXZAngle);
 
     /* apply boat position */
-    Vector3D translation = {sScene.XPos, 0.0f, sScene.ZPos};  // Adjust the speed as needed
-    sScene.bodyTransformMatrix = Matrix4D::translation(translation) * sScene.bodyTransformMatrix;
-    sScene.bridgeTransformMatrix = Matrix4D::translation(translation) * sScene.bridgeTransformMatrix;
-    sScene.leftBulwarkTransformMatrix = Matrix4D::translation(translation) * sScene.leftBulwarkTransformMatrix;
-    sScene.rightBulwarkTransformMatrix = Matrix4D::translation(translation) * sScene.rightBulwarkTransformMatrix;
-    sScene.frontBulwarkTransformMatrix = Matrix4D::translation(translation) * sScene.frontBulwarkTransformMatrix;
-    sScene.backBulwarkTransformMatrix = Matrix4D::translation(translation) * sScene.backBulwarkTransformMatrix;
-    sScene.mastTransformMatrix = Matrix4D::translation(translation) * sScene.mastTransformMatrix;
+    sScene.boatTransformationMatrix =
+            Matrix4D::translation(sScene.boatPosition) * sScene.boatTransformationMatrix;
+
+    /* if in ThirdPersonView: update camera lookAt*/
+    if (sScene.cameraMode == CameraMode::ThirdPersonView) {
+        sScene.camera.lookAt = sScene.boatPosition;
+    }
+
+    /* if '1' or '2' is pressed, change the camera mode*/
+    if (sInput.buttonPressed[4]) {
+        sScene.cameraMode = CameraMode::FixedView;
+    } else if (sInput.buttonPressed[5]) {
+        sScene.cameraMode = CameraMode::ThirdPersonView;
+    }
+
+
 }
 
 /* function to draw all objects in the scene */
@@ -232,36 +377,11 @@ void sceneDraw() {
         glBindVertexArray(sScene.water.mesh.vao);
         glDrawElements(GL_TRIANGLES, sScene.water.mesh.size_ibo, GL_UNSIGNED_INT, nullptr);
 
-        /* draw boat */
-        shaderUniform(sScene.shaderColor, "uModel", sScene.bodyTransformMatrix);
+        /* draw boat, requires to calculate the final model matrix from all transformations */
+        shaderUniform(sScene.shaderColor, "uModel",
+                      sScene.boatTranslationMatrix * sScene.boatTransformationMatrix * sScene.boatScalingMatrix);
         glBindVertexArray(sScene.boatMesh.vao);
         glDrawElements(GL_TRIANGLES, sScene.boatMesh.size_ibo, GL_UNSIGNED_INT, nullptr);
-
-        shaderUniform(sScene.shaderColor, "uModel", sScene.bridgeTransformMatrix);
-        glBindVertexArray(sScene.boatMesh.vao);
-        glDrawElements(GL_TRIANGLES, sScene.boatMesh.size_ibo, GL_UNSIGNED_INT, nullptr);
-
-        shaderUniform(sScene.shaderColor, "uModel", sScene.leftBulwarkTransformMatrix);
-        glBindVertexArray(sScene.boatMesh.vao);
-        glDrawElements(GL_TRIANGLES, sScene.boatMesh.size_ibo, GL_UNSIGNED_INT, nullptr);
-
-        shaderUniform(sScene.shaderColor, "uModel", sScene.rightBulwarkTransformMatrix);
-        glBindVertexArray(sScene.boatMesh.vao);
-        glDrawElements(GL_TRIANGLES, sScene.boatMesh.size_ibo, GL_UNSIGNED_INT, nullptr);
-
-        shaderUniform(sScene.shaderColor, "uModel", sScene.frontBulwarkTransformMatrix);
-        glBindVertexArray(sScene.boatMesh.vao);
-        glDrawElements(GL_TRIANGLES, sScene.boatMesh.size_ibo, GL_UNSIGNED_INT, nullptr);
-
-        shaderUniform(sScene.shaderColor, "uModel", sScene.backBulwarkTransformMatrix);
-        glBindVertexArray(sScene.boatMesh.vao);
-        glDrawElements(GL_TRIANGLES, sScene.boatMesh.size_ibo, GL_UNSIGNED_INT, nullptr);
-
-        shaderUniform(sScene.shaderColor, "uModel", sScene.mastTransformMatrix);
-        glBindVertexArray(sScene.boatMesh.vao);
-        glDrawElements(GL_TRIANGLES, sScene.boatMesh.size_ibo, GL_UNSIGNED_INT, nullptr);
-
-
     }
     glCheckError();
 
@@ -300,8 +420,9 @@ int main(int argc, char **argv) {
         /* poll and process input and window events */
         glfwPollEvents();
 
-        /* update model matrix of cube */
+        /* update model matrix of boat */
         timeStampNew = glfwGetTime();
+        sScene.waterSim.accumTime += timeStampNew - timeStamp;
         sceneUpdate(timeStampNew - timeStamp);
         timeStamp = timeStampNew;
 
