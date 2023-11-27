@@ -143,7 +143,7 @@ void sceneInit(float width, float height) {
 
     sScene.boatXPos = 0;
     sScene.boatZPos = 0;
-    sScene.boatXZAngle = 0; //This does not affect the wrong movement direction
+    sScene.boatXZAngle = M_PI;
 
     /* load shader from file */
     sScene.shaderColor = shaderLoad("shader/default.vert", "shader/default.frag");
@@ -165,36 +165,32 @@ void sceneUpdate(float dt) {
     }
     sScene.water.mesh = meshCreate(sScene.water.vertices, grid::indices, GL_DYNAMIC_DRAW, GL_STATIC_DRAW);
 
-    /* if 'w' or 's' pressed, move the boat forward or backward along rotation*/
-    int moveDirZ = 0;
-    if (sInput.buttonPressed[0]) {  // 'w' pressed
-        moveDirZ = 1;
-    } else if (sInput.buttonPressed[1]) {  // 's' pressed
-        moveDirZ = -1;
-    }
 
-    /* if 'a' or 'd' pressed, steer the boat left or right */
+
+    /* if 'a' or 'd' are pressed: update boat rotation angle  */
     if (sInput.buttonPressed[2]) {  // 'a' pressed
         sScene.boatXZAngle += sScene.boatSpinRadPerSecond * dt;
     } else if (sInput.buttonPressed[3]) {  // 'd' pressed
         sScene.boatXZAngle -= sScene.boatSpinRadPerSecond * dt;
     }
 
-    /* update boat position depending on the rotation*/
-    // TODO: eliminate moveDirZ variable?
-    if (moveDirZ == 1) {
-        sScene.boatXPos += std::sin(sScene.boatXZAngle) * sScene.boatMovementPerSecond * dt;
-        sScene.boatZPos += std::cos(sScene.boatXZAngle) * sScene.boatMovementPerSecond * dt;
-    } else if (moveDirZ == -1) {
-        sScene.boatXPos -= std::sin(sScene.boatXZAngle) * sScene.boatMovementPerSecond * dt;
-        sScene.boatZPos -= std::cos(sScene.boatXZAngle) * sScene.boatMovementPerSecond * dt;
+    /* if 'w' or 's' pressed: update boat position, depending on the boat rotation angle */
+    int moveDirZ = 0;
+    if (sInput.buttonPressed[0]) {  // 'w' pressed
+        sScene.boatXPos += std::sin(sScene.boatXZAngle + (float) M_PI_2) * sScene.boatMovementPerSecond * dt;
+        sScene.boatZPos += std::cos(sScene.boatXZAngle + (float) M_PI_2) * sScene.boatMovementPerSecond * dt;
+    } else if (sInput.buttonPressed[1]) {  // 's' pressed
+        sScene.boatXPos -= std::sin(sScene.boatXZAngle + (float) M_PI_2) * sScene.boatMovementPerSecond * dt;
+        sScene.boatZPos -= std::cos(sScene.boatXZAngle + (float) M_PI_2) * sScene.boatMovementPerSecond * dt;
     }
 
-    /* TODO: apply boat rotation*/
+
+    /* apply boat rotation */
     sScene.boatTransformationMatrix = Matrix4D::rotationY(sScene.boatXZAngle);
 
-    /* TODO: apply boat position */
-    sScene.boatTransformationMatrix = Matrix4D::translation({sScene.boatXPos, 0, sScene.boatZPos}) * sScene.boatTransformationMatrix;
+    /* apply boat position */
+    sScene.boatTransformationMatrix =
+            Matrix4D::translation({sScene.boatXPos, 0, sScene.boatZPos}) * sScene.boatTransformationMatrix;
 
 }
 
