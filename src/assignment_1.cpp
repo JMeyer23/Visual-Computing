@@ -9,6 +9,7 @@
 #include "water.h"
 
 
+
 /* translation and color for the water plane */
 namespace waterPlane {
     const Vector4D color = {0.0f, 0.0f, 0.35f, 1.0f};
