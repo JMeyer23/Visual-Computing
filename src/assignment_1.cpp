@@ -15,8 +15,8 @@ const Vector4D color = {0.0f, 0.0f, 0.35f, 1.0f};
 const Matrix4D trans = Matrix4D::identity();
 }
 
-/* translation and scale for the scaled cube */
-namespace scaledCube
+/* translation and scale for the scaled boat */
+namespace scaledBoat
 {
 const Matrix4D scale = Matrix4D::scale(2.0f, 2.0f, 2.0f);
 const Matrix4D trans = Matrix4D::translation({0.0f, 4.0f, 0.0f});
@@ -34,12 +34,12 @@ struct
     Water water;
     Matrix4D waterModelMatrix;
 
-    /* cube mesh and transformations */
-    Mesh cubeMesh;
-    Matrix4D cubeScalingMatrix;
-    Matrix4D cubeTranslationMatrix;
-    Matrix4D cubeTransformationMatrix;
-    float cubeSpinRadPerSecond;
+    /* boat mesh and transformations */
+    Mesh boatMesh;
+    Matrix4D boatScalingMatrix;
+    Matrix4D boatTranslationMatrix;
+    Matrix4D boatTransformationMatrix;
+    float boatSpinRadPerSecond;
 
     /* shader */
     ShaderProgram shaderColor;
@@ -70,7 +70,7 @@ void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods
         screenshotToPNG("screenshot.png");
     }
 
-    /* input for cube control */
+    /* input for boat control */
     if(key == GLFW_KEY_W)
     {
         sInput.buttonPressed[0] = (action == GLFW_PRESS || action == GLFW_REPEAT);
@@ -136,27 +136,27 @@ void sceneInit(float width, float height)
     sScene.zoomSpeedMultiplier = 0.05f;
 
     /* setup objects in scene and create opengl buffers for meshes */
-    sScene.cubeMesh = meshCreate(cube::vertices, cube::indices, GL_STATIC_DRAW, GL_STATIC_DRAW);
+    sScene.boatMesh = meshCreate(boat::vertices, boat::indices, GL_STATIC_DRAW, GL_STATIC_DRAW);
     sScene.water = waterCreate(waterPlane::color);
 
     /* setup transformation matrices for objects */
     sScene.waterModelMatrix = waterPlane::trans;
 
-    sScene.cubeScalingMatrix = scaledCube::scale;
-    sScene.cubeTranslationMatrix = scaledCube::trans;
+    sScene.boatScalingMatrix = scaledBoat::scale;
+    sScene.boatTranslationMatrix = scaledBoat::trans;
 
-    sScene.cubeTransformationMatrix = Matrix4D::identity();
+    sScene.boatTransformationMatrix = Matrix4D::identity();
 
-    sScene.cubeSpinRadPerSecond = M_PI / 2.0f;
+    sScene.boatSpinRadPerSecond = M_PI / 2.0f;
 
     /* load shader from file */
     sScene.shaderColor = shaderLoad("shader/default.vert", "shader/default.frag");
 }
 
-/* function to move and update objects in scene (e.g., rotate cube according to user input) */
+/* function to move and update objects in scene (e.g., rotate boat according to user input) */
 void sceneUpdate(float dt)
 {
-    /* if 'w' or 's' pressed, cube should rotate around x axis */
+    /* if 'w' or 's' pressed, boat should rotate around x axis */
     int rotationDirX = 0;
     if (sInput.buttonPressed[0]) {
         rotationDirX = -1;
@@ -164,7 +164,7 @@ void sceneUpdate(float dt)
         rotationDirX = 1;
     }
 
-    /* if 'a' or 'd' pressed, cube should rotate around y axis */
+    /* if 'a' or 'd' pressed, boat should rotate around y axis */
     int rotationDirY = 0;
     if (sInput.buttonPressed[2]) {
         rotationDirY = -1;
@@ -172,9 +172,9 @@ void sceneUpdate(float dt)
         rotationDirY = 1;
     }
 
-    /* udpate cube transformation matrix to include new rotation if one of the keys was pressed */
+    /* udpate boat transformation matrix to include new rotation if one of the keys was pressed */
     if (rotationDirX != 0 || rotationDirY != 0) {
-        sScene.cubeTransformationMatrix = Matrix4D::rotationY(rotationDirY * sScene.cubeSpinRadPerSecond * dt) * Matrix4D::rotationX(rotationDirX * sScene.cubeSpinRadPerSecond * dt) * sScene.cubeTransformationMatrix;
+        sScene.boatTransformationMatrix = Matrix4D::rotationY(rotationDirY * sScene.boatSpinRadPerSecond * dt) * Matrix4D::rotationX(rotationDirX * sScene.boatSpinRadPerSecond * dt) * sScene.boatTransformationMatrix;
     }
 }
 
@@ -197,10 +197,10 @@ void sceneDraw()
         glBindVertexArray(sScene.water.mesh.vao);
         glDrawElements(GL_TRIANGLES, sScene.water.mesh.size_ibo, GL_UNSIGNED_INT, nullptr);
 
-        /* draw cube, requires to calculate the final model matrix from all transformations */
-        shaderUniform(sScene.shaderColor, "uModel", sScene.cubeTranslationMatrix * sScene.cubeTransformationMatrix * sScene.cubeScalingMatrix);
-        glBindVertexArray(sScene.cubeMesh.vao);
-        glDrawElements(GL_TRIANGLES, sScene.cubeMesh.size_ibo, GL_UNSIGNED_INT, nullptr);
+        /* draw boat, requires to calculate the final model matrix from all transformations */
+        shaderUniform(sScene.shaderColor, "uModel", sScene.boatTranslationMatrix * sScene.boatTransformationMatrix * sScene.boatScalingMatrix);
+        glBindVertexArray(sScene.boatMesh.vao);
+        glDrawElements(GL_TRIANGLES, sScene.boatMesh.size_ibo, GL_UNSIGNED_INT, nullptr);
     }
     glCheckError();
 
@@ -241,7 +241,7 @@ int main(int argc, char** argv)
         /* poll and process input and window events */
         glfwPollEvents();
 
-        /* update model matrix of cube */
+        /* update model matrix of boat */
         timeStampNew = glfwGetTime();
         sceneUpdate(timeStampNew - timeStamp);
         timeStamp = timeStampNew;
@@ -258,7 +258,7 @@ int main(int argc, char** argv)
     /* delete opengl shader and buffers */
     shaderDelete(sScene.shaderColor);
     waterDelete(sScene.water);
-    meshDelete(sScene.cubeMesh);
+    meshDelete(sScene.boatMesh);
 
     /* cleanup glfw/glcontext */
     windowDelete(window);
